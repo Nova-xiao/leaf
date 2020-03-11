@@ -16,7 +16,7 @@ class Client:
     
     d = None
     try:
-        with open('/gpfs/share/home/1901213357/ycx/backup/data/trace/normalized_guid2data.json', 'r', encoding='utf-8') as f:
+        with open('/Users/nova/leaf-dev-1/data/trace/normalized_guid2data.json', 'r', encoding='utf-8') as f:
             d = json.load(f)
     except FileNotFoundError as e:
         d = None
@@ -64,7 +64,7 @@ class Client:
             batch_size: Size of training batches.
             minibatch: fraction of client's data to apply minibatch sgd,
                 None to use FedAvg
-            start_t: strat time of the training, only used in train_with_simulate_time
+            start_t: start time of the training, only used in train_with_simulate_time
         Return:
             comp: number of FLOPs executed in training process
             num_samples: number of samples used in training

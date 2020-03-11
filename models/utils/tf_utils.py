@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+import numpy as np
 
 def __num_elems(shape):
     '''Returns the number of elements in the given shape
@@ -37,3 +38,14 @@ def graph_size(graph):
             var_size = tot_elems * dtype_size
             tot_size += var_size
     return tot_size
+
+def norm_grad(grad_list):
+    # input: nested gradients
+    # output: square of the L-2 norm
+
+    client_grads = grad_list[0] # shape now: (784, 26)
+
+    for i in range(1, len(grad_list)):
+        client_grads = np.append(client_grads, grad_list[i]) # output a flattened array
+
+    return np.sum(np.square(client_grads))

@@ -18,10 +18,13 @@ class Device_Util:
         try:
             with open(os.path.join(cur_dir, 'real2benchmark.json')) as f:
                 self.real2benchmark = json.load(f)
+                print('real2benchmark.json Done.')
             with open(os.path.join(cur_dir, 'benchmark2score.json')) as f:
                 self.benchmark2score = json.load(f)
+                print('benchmark2score.json Done.')
             with open(os.path.join(cur_dir, 'supported_devices.json')) as f:
                 self.supported_devices = json.load(f)
+                print('supported_devices.json Done.')
                 self.supported_score = [self.benchmark2score[device] for device in self.supported_devices]
                 self.supported_rank = [list(self.benchmark2score).index(device) for device in self.supported_devices]
                 # print('supported_score: {}'.format(self.supported_score))

@@ -57,6 +57,14 @@ class Model(ABC):
             model_params = self.sess.run(tf.trainable_variables())
         return model_params
 
+    '''
+    # 获取loss
+    def get_loss(self):
+        with self.graph.as_default():
+            loss = self.sess.run(self.loss, feed_dict={self.features: process_x(data['x']), self.labels: process_y(data['y'])})
+        return loss
+    '''
+
     @property
     def optimizer(self):
         """Optimizer to be used by the model."""

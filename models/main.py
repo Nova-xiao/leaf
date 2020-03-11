@@ -191,6 +191,10 @@ def main():
             # logger.info('attended_clients: {}'.format(attended_clients))
             # test_clients = random.sample(clients, min(100,len(clients)))
             test_num = len(clients)
+
+            # limit test_num to make test easier
+            test_num = min(100, test_num)
+
             if (i + 1) % (10*eval_every) == 0 or (i + 1) == num_rounds:
                 test_num = len(clients)    
                 with open('attended_clients_{}.json'.format(config_name), 'w') as fp:

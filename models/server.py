@@ -4,6 +4,8 @@ import traceback
 from utils.logger import Logger
 from collections import defaultdict
 import json
+# import helper function to help q-fair algorithm
+from utils.tf_utils import norm_grad
 
 from baseline_constants import BYTES_WRITTEN_KEY, BYTES_READ_KEY, LOCAL_COMPUTATIONS_KEY
 
@@ -78,6 +80,7 @@ class Server:
                    LOCAL_COMPUTATIONS_KEY: 0,
                    'acc': {},
                    'loss': {}} for c in clients}
+
         # for c in self.all_clients:
             # c.model.set_params(self.model)
         simulate_time = 0
@@ -85,6 +88,9 @@ class Server:
         losses = []
         for c in clients:
             c.model.set_params(self.model)
+            before = c.model.get_params()     # for q-fair algorithms
+            c_metrics = c.test('train')
+            old_loss = c_metrics['loss']     # to get loss for q-fair algorithms
             try:
                 # set deadline 
                 c.set_deadline(deadline)
@@ -107,7 +113,7 @@ class Server:
                 sys_metrics[c.id]['acc'] = acc
                 sys_metrics[c.id]['loss'] = loss
                 # uploading 
-                self.updates.append((c.id, num_samples, update))
+                self.updates.append((c.id, num_samples, update, before, old_loss))
                 norm_comp = int(comp/self.client_model.flops)
                 if norm_comp == 0:
                     logger.error('comp: {}, flops: {}'.format(comp, self.client_model.flops))
@@ -153,10 +159,10 @@ class Server:
             if self.cfg.aggregate_algorithm == 'FedAvg':
                 # aggregate all the clients
                 logger.info('Aggragate with FedAvg')
-                used_client_ids = [cid for (cid, client_samples, client_model) in self.updates]
+                used_client_ids = [cid for (cid, client_samples, client_model, c_before, c_loss) in self.updates]
                 total_weight = 0.
                 base = [0] * len(self.updates[0][2])
-                for (cid, client_samples, client_model) in self.updates:
+                for (cid, client_samples, client_model, c_before, c_loss) in self.updates:
                     total_weight += client_samples
                     for i, v in enumerate(client_model):
                         base[i] += (client_samples * v.astype(np.float64))
@@ -174,7 +180,7 @@ class Server:
                 logger.info('Aggragate with SucFedAvg')
                 total_weight = 0.
                 base = [0] * len(self.updates[0][2])
-                for (cid, client_samples, client_model) in self.updates:
+                for (cid, client_samples, client_model, c_before, c_loss) in self.updates:
                     # logger.info('cid: {}, client_samples: {}, client_model: {}'.format(cid, client_samples, client_model[0][0][:5]))
                     total_weight += client_samples
                     for i, v in enumerate(client_model):
@@ -184,10 +190,10 @@ class Server:
             elif self.cfg.aggregate_algorithm == 'SelFedAvg':
                 # aggregate the selected clients
                 logger.info('Aggragate with SelFedAvg')
-                used_client_ids = [cid for (cid, client_samples, client_model) in self.updates]
+                used_client_ids = [cid for (cid, client_samples, client_model, c_before, c_loss) in self.updates]
                 total_weight = 0.
                 base = [0] * len(self.updates[0][2])
-                for (cid, client_samples, client_model) in self.updates:
+                for (cid, client_samples, client_model, c_before, c_loss) in self.updates:
                     total_weight += client_samples
                     for i, v in enumerate(client_model):
                         base[i] += (client_samples * v.astype(np.float64))
@@ -200,6 +206,27 @@ class Server:
                             base[i] += (c.num_train_samples * v.astype(np.float64))
                 averaged_soln = [v / total_weight for v in base]
                 self.model = averaged_soln
+            elif self.cfg.aggregate_algorithm == 'qfFedAvg':
+                # Newly added, q-fair FedAvg
+                logger.info('Aggragate with qfFedAvg')
+                q = self.cfg.q
+                learning_rate = self.cfg.lr
+                if q < 0:
+                    logger.error('Fail because lacking important factor q')
+                    assert False
+                Deltas = []
+                hs = []
+                for (cid, client_samples, client_model, c_before, c_loss) in self.updates:
+                    # plug in the weight updates into the gradient
+                    grads = [(u - v) * 1.0 / learning_rate for u, v in zip(c_before, client_model)]
+
+                    # print(c_loss)
+                    Deltas.append([np.float_power(c_loss+1e-10, q) * grad for grad in grads])
+                    # estimation of the local Lipchitz constant
+                    hs.append(q * np.float_power(c_loss+1e-10, (q-1)) * norm_grad(grads) + (1.0/learning_rate) * np.float_power(c_loss+1e-10, q))
+
+                # aggregate using the dynamic step-size
+                self.model = self.aggregate2(c_before, Deltas, hs)
             else:
                 # not supported aggregating algorithm
                 logger.error('not supported aggregating algorithm: {}'.format(self.cfg.aggregate_algorithm))
@@ -276,3 +303,24 @@ class Server:
         with open('clients_info_{}.json'.format(self.cfg.config_name), 'w') as f:
             json.dump(self.clients_info, f)
         logger.info('save clients_info.json.')
+
+    # Copied from q-fair
+    def aggregate2(self, weights_before, Deltas, hs): 
+        
+        demominator = np.sum(np.asarray(hs))
+        num_clients = len(Deltas)
+        scaled_deltas = []
+        for client_delta in Deltas:
+            scaled_deltas.append([layer * 1.0 / demominator for layer in client_delta])
+
+        updates = []
+        for i in range(len(Deltas[0])):
+            tmp = scaled_deltas[0][i]
+            for j in range(1, len(Deltas)):
+                tmp += scaled_deltas[j][i]
+            updates.append(tmp)
+
+        new_solutions = [(u - v) * 1.0 for u, v in zip(weights_before, updates)]
+
+        return new_solutions
+

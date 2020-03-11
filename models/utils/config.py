@@ -45,6 +45,7 @@ class Config():
         self.time_window = [20.0, 0.0]  # time window for selection stage
         self.user_trace = False
         self.no_training = False
+        self.q = -1     # factor of q-fair algorithms, -1 means not using
         
         logger.info('read config from {}'.format(config_file))
         self.read_config(config_file)
@@ -109,6 +110,9 @@ class Config():
                             logger.info('no actual training process')
                     elif line[0] == 'max_sample' :
                         self.max_sample = int(line[1])
+                    elif line[0] == 'q':
+                        #Newly added, for supporting q-fair algorithms
+                        self.q = int(line[1])
                 except Exception as e:
                     traceback.print_exc()
     
